@@ -1,0 +1,15 @@
+{
+  "name": "local-notes",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "doctor": "bash scripts/doctor.sh",
+    "build": "bash scripts/build.sh",
+    "pack": "bash scripts/build.sh",
+    "icon": "bash scripts/icon.sh",
+    "start": "open dist/本地便签.app",
+    "test": "bash scripts/test.sh",
+    "test:all": "npm run doctor && npm test && npm run build && npm run test:package-contents",
+    "test:package-contents": "bash scripts/verify-package.sh"
+  }
+}

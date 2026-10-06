@@ -1,0 +1,34 @@
+# Build products and packaged application
+/build/
+/dist/
+
+# Test output and local fixture data
+/test-results/
+
+# Swift / Xcode generated data
+.DS_Store
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+.swiftpm/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+
+# Runtime caches
+.cache/
+.cache-*/
+*.log
