@@ -9,14 +9,23 @@ private let sidebarColor = Color(red: 0.945, green: 0.94, blue: 0.925)
 struct RootView: View {
     @ObservedObject var store: AppStore
     @FocusState private var searchFocused: Bool
+    @StateObject private var browser = AskBrowser()
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
                 Sidebar(store: store).frame(width: 174)
                 Divider()
-                listColumn.frame(width: 310)
-                Divider()
-                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                ZStack {
+                    HStack(spacing: 0) {
+                        listColumn.frame(width: 310)
+                        Divider()
+                        detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }.opacity(store.asking ? 0 : 1).allowsHitTesting(!store.asking).accessibilityHidden(store.asking)
+                    if browser.opened {
+                        AskView(browser: browser, active: store.asking).opacity(store.asking ? 1 : 0)
+                            .allowsHitTesting(store.asking).accessibilityHidden(!store.asking)
+                    }
+                }
             }
             .background(paper)
             .disabled(store.loadError != nil || store.immersive)
@@ -46,7 +55,8 @@ struct RootView: View {
                 HStack { Text(store.message).font(.caption); Spacer(); if store.undoLabel != nil { Button("撤销") { store.undo() }.buttonStyle(.borderless) } }.padding(.horizontal, 18).padding(.vertical, 8).background(sidebarColor)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in searchFocused = true }
+        .onChange(of: store.asking) { _, asking in if asking { browser.open() } }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in if !store.asking { searchFocused = true } }
     }
     private var listColumn: some View {
         VStack(spacing: 0) {
@@ -131,22 +141,30 @@ struct Sidebar: View {
     @ObservedObject var store: AppStore
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) { Image(systemName: "note.text").font(.title2).foregroundStyle(gold); Text("本地便签").font(.system(size: 16, weight: .semibold)) }.padding(.horizontal, 18).padding(.top, 24)
+            HStack(spacing: 9) { Image(systemName: "note.text").font(.title2).foregroundStyle(gold); Text("本地工作台").font(.system(size: 16, weight: .semibold)) }.padding(.horizontal, 18).padding(.top, 24)
             Text("把想法，变成今天。 ").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.top, 8)
             Text("我的任务").font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.top, 33).padding(.bottom, 10)
             ForEach(Bucket.allCases) { b in
                 Button { store.switchTo(b) } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: b.symbol).frame(width: 18).foregroundStyle(store.bucket == b ? gold : Color.secondary)
-                        Text(b.name).font(.system(size: 14, weight: store.bucket == b ? .semibold : .regular))
+                        Image(systemName: b.symbol).frame(width: 18).foregroundStyle(!store.asking && store.bucket == b ? gold : Color.secondary)
+                        Text(b.name).font(.system(size: 14, weight: !store.asking && store.bucket == b ? .semibold : .regular))
                         Spacer()
                         Text("\(store.state[b].count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    }.padding(.horizontal, 12).padding(.vertical, 11).background(store.bucket == b ? Color(red: 0.91, green: 0.85, blue: 0.69) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+                    }.padding(.horizontal, 12).padding(.vertical, 11).background(!store.asking && store.bucket == b ? Color(red: 0.91, green: 0.85, blue: 0.69) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                 }.buttonStyle(.plain).padding(.horizontal, 10).padding(.bottom, 3)
                 .background(GeometryReader { proxy in Color.clear.preference(key: DragFrames.self, value: ["bucket-" + b.rawValue: proxy.frame(in: .named("taskBoard"))]) })
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(store.dragging != nil && store.dragFrames["bucket-" + b.rawValue]?.contains(store.dragPoint) == true ? gold : Color.clear, lineWidth: 2).padding(.horizontal, 10))
                 .accessibilityLabel("\(b.name)，\(store.state[b].count) 条任务")
             }
+            Button { store.showAsk() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "bubble.left.and.bubble.right").frame(width: 18).foregroundStyle(store.asking ? gold : Color.secondary)
+                    Text("随时问").font(.system(size: 14, weight: store.asking ? .semibold : .regular))
+                    Spacer()
+                }.padding(.horizontal, 12).padding(.vertical, 11)
+                    .background(store.asking ? Color(red: 0.91, green: 0.85, blue: 0.69) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+            }.buttonStyle(.plain).padding(.horizontal, 10).accessibilityLabel("随时问")
             Divider().padding(.horizontal, 18).padding(.vertical, 20)
             Button { store.sheet = .capture } label: { Label("快速捕获", systemImage: "plus.circle") }.buttonStyle(.plain).padding(.horizontal, 18).padding(.bottom, 17)
             Button { store.sheet = .commands } label: { Label("命令与搜索", systemImage: "command") }.buttonStyle(.plain).padding(.horizontal, 18).font(.callout)
@@ -157,7 +175,7 @@ struct Sidebar: View {
                 }.buttonStyle(.plain).padding(14).background(gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 12).padding(.bottom, 12)
             }
             HStack {
-                Text("仅存于这台 Mac").font(.caption2).foregroundStyle(.secondary)
+                Text(store.asking ? "对话由对应平台提供" : "仅存于这台 Mac").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 Menu {
                     Button("导出任务备份…") { store.exportData() }
@@ -562,6 +580,7 @@ struct CommandSheet: View {
     private var entries: [Entry] {
         var commands = Bucket.allCases.map { b in Entry(id: b.rawValue, title: "前往\(b.name)", subtitle: "切换列表", symbol: b.symbol, run: { store.switchTo(b) }) }
         commands += [
+            Entry(id: "ask", title: "前往随时问", subtitle: "ChatGPT · DeepSeek · 豆包网页版", symbol: "bubble.left.and.bubble.right", run: { store.showAsk() }),
             Entry(id: "capture", title: "快速捕获", subtitle: "记录一件新任务", symbol: "square.and.pencil", run: { store.sheet = .capture }),
             Entry(id: "plan", title: "今日规划", subtitle: "安排焦点和预计用时", symbol: "list.bullet.clipboard", run: { store.sheet = .plan }),
             Entry(id: "focus", title: store.clock.running ? "暂停专注" : "开始专注", subtitle: "番茄计时器", symbol: "timer", run: { store.toggleFocus() }),

@@ -66,7 +66,13 @@ import AppKit
         expect(imported.today[0].id == "old-1" && imported.preferences.dailyReviews["2026-10-04"]?.win == "完成方案", "兼容原工作台 JSON 并忽略不相关内容")
         let storeRoot = root.appendingPathComponent("store")
         let store = AppStore(directory: storeRoot)
+        store.showAsk()
+        expect(store.asking && store.state == Workspace(), "进入随时问不修改任务数据")
+        store.switchTo(.week)
+        expect(!store.asking && store.bucket == .week, "返回任务分类离开网页视图")
+        store.showAsk()
         expect(store.add("测试任务 #work !P1 ~25m", to: .today), "应用操作创建任务")
+        expect(!store.asking && store.bucket == .today, "网页视图快速捕获后返回对应任务")
         let id = store.state.today[0].id
         _ = store.editTitle(id, raw: "更新标题")
         expect(store.state.today[0].priority == 1 && store.state.today[0].estimate == 25, "只编辑标题时保留元数据")
@@ -96,6 +102,13 @@ import AppKit
         let badRoot = root.appendingPathComponent("not-a-directory"); try Data("x".utf8).write(to: badRoot)
         let failedStore = AppStore(directory: badRoot); _ = failedStore.add("不可写目录", to: .today)
         expect(failedStore.saveError != nil && failedStore.state.today.count == 1, "保存失败可见且保留内存变更以供重试")
+        expect(Set(AskProvider.allCases.map { $0.profileID() }).count == 3, "三个平台使用独立网页数据空间")
+        expect(AskProvider.chatgpt.profileID() == AskProvider.chatgpt.profileID() && AskProvider.chatgpt.profileID(namespace: root.path) != AskProvider.chatgpt.profileID(), "登录空间跨启动稳定且测试与真实用户隔离")
+        expect(AskProvider.allCases.allSatisfy { $0.home.scheme == "https" && WebPolicy.allows($0.home) }, "三个平台入口使用有效 HTTPS 官方网址")
+        expect(["file:///etc/passwd", "javascript:alert(1)", "localnotes://exec", "https://user:secret@example.com"].allSatisfy { !WebPolicy.allows(URL(string: $0)!) }, "网页导航拒绝本机文件、脚本、任意协议与 URL 凭据")
+        expect(WebPolicy.allows(URL(string: "about:blank")!) && WebPolicy.allows(URL(string: "blob:https://chatgpt.com/test")!), "允许登录空白窗口及网页生成附件")
+        expect(WebPolicy.testOrigin("http://127.0.0.1:18765") != nil && WebPolicy.testOrigin("https://evil.example") == nil && WebPolicy.testOrigin("http://localhost") == nil, "测试网页入口仅接受显式回环端口")
+        expect(WebPolicy.isNavigationCancellation(NSError(domain: "WebKitErrorDomain", code: 102)) && WebPolicy.isNavigationCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)) && !WebPolicy.isNavigationCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost)), "下载导航中断不误报加载失败，真实网络错误仍报告")
         print("\n\(count) checks passed; all data isolated in a temporary directory.")
     }
 }

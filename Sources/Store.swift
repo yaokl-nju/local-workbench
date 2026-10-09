@@ -7,6 +7,7 @@ enum SheetRoute: String, Identifiable { case capture, plan, commands, shortcuts;
 @MainActor final class AppStore: ObservableObject {
     @Published var state = Workspace()
     @Published var bucket: Bucket = .today
+    @Published var asking = false
     @Published var selected: String?
     @Published var queries: [Bucket: String] = [:]
     @Published var filters: [Bucket: TaskFilter] = [:]
@@ -75,14 +76,15 @@ enum SheetRoute: String, Identifiable { case capture, plan, commands, shortcuts;
         message = text; messageTimer?.invalidate()
         messageTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in Task { @MainActor in self?.message = "" } }
     }
-    func switchTo(_ b: Bucket) { bucket = b; selected = nil }
+    func switchTo(_ b: Bucket) { asking = false; bucket = b; selected = nil }
+    func showAsk() { asking = true; dragging = nil }
     @discardableResult func add(_ text: String, to b: Bucket, tag: String = "TODO") -> Bool {
         let parsed = ParsedTask(text, fallbackTag: tag)
         guard !parsed.title.isEmpty else { toast("请输入任务内容"); return false }
         guard parsed.title.count <= 200 else { toast("任务标题最多 200 字"); return false }
         var id: String?
         change("添加任务") { id = $0.add(text, to: b, fallbackTag: tag) }
-        guard let id else { return false }; bucket = b; selected = id; queries[b] = ""; filters[b] = .all
+        guard let id else { return false }; asking = false; bucket = b; selected = id; queries[b] = ""; filters[b] = .all
         toast("已添加到\(b.name)"); return true
     }
     func select(_ task: NoteTask) {
@@ -154,7 +156,7 @@ enum SheetRoute: String, Identifiable { case capture, plan, commands, shortcuts;
     func toggleFocus() { if clock.running { pauseFocus() } else { startFocus() } }
     func resetFocus() { clock.reset(); immersive = false }
     func exportData() {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "本地便签-\(currentDay).json"; panel.allowedContentTypes = [.json]
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "本地工作台-\(currentDay).json"; panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try disk.export(state, to: url); toast("已导出备份") } catch { toast("导出失败：\(error.localizedDescription)") }
     }

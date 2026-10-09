@@ -7,7 +7,7 @@
     "build": "bash scripts/build.sh",
     "pack": "bash scripts/build.sh",
     "icon": "bash scripts/icon.sh",
-    "start": "open dist/本地便签.app",
+    "start": "open dist/本地工作台.app",
     "test": "bash scripts/test.sh",
     "test:all": "npm run doctor && npm test && npm run build && npm run test:package-contents",
     "test:package-contents": "bash scripts/verify-package.sh"

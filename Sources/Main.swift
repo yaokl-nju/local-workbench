@@ -22,7 +22,7 @@ import Darwin
         store = AppStore(directory: base)
         makeMenu()
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 780), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "本地便签"; window.minSize = NSSize(width: 900, height: 680); window.delegate = self
+        window.title = "本地工作台"; window.minSize = NSSize(width: 900, height: 680); window.delegate = self
         window.isReleasedWhenClosed = false; window.center()
         window.contentView = NSHostingView(rootView: RootView(store: store))
         window.setFrameAutosaveName("LocalNotesMain")
@@ -46,13 +46,16 @@ import Darwin
         return applicationShouldTerminate(NSApp) == .terminateNow
     }
     func applicationWillTerminate(_ notification: Notification) { if lockFD >= 0 { flock(lockFD, LOCK_UN); Darwin.close(lockFD) } }
+    func windowWillClose(_ notification: Notification) {
+        if notification.object as? NSWindow === window { NSApp.terminate(nil) }
+    }
     private func makeMenu() {
         let menu = NSMenu()
-        let appMenu = NSMenu(title: "本地便签")
+        let appMenu = NSMenu(title: "本地工作台")
         let appRoot = NSMenuItem(); appRoot.submenu = appMenu; menu.addItem(appRoot)
-        add("关于本地便签", #selector(about), "", to: appMenu)
-        appMenu.addItem(.separator()); add("隐藏本地便签", #selector(NSApplication.hide(_:)), "h", to: appMenu, target: NSApp)
-        appMenu.addItem(.separator()); add("退出本地便签", #selector(NSApplication.terminate(_:)), "q", to: appMenu, target: NSApp)
+        add("关于本地工作台", #selector(about), "", to: appMenu)
+        appMenu.addItem(.separator()); add("隐藏本地工作台", #selector(NSApplication.hide(_:)), "h", to: appMenu, target: NSApp)
+        appMenu.addItem(.separator()); add("退出本地工作台", #selector(NSApplication.terminate(_:)), "q", to: appMenu, target: NSApp)
         let fileMenu = submenu("文件", in: menu)
         add("快速捕获…", #selector(capture), "n", to: fileMenu)
         add("今日规划…", #selector(plan), "p", to: fileMenu, modifiers: [.command, .shift])
@@ -65,6 +68,7 @@ import Darwin
         add("剪切", #selector(NSText.cut(_:)), "x", to: edit, target: nil); add("拷贝", #selector(NSText.copy(_:)), "c", to: edit, target: nil); add("粘贴", #selector(NSText.paste(_:)), "v", to: edit, target: nil); add("全选", #selector(NSText.selectAll(_:)), "a", to: edit, target: nil)
         let view = submenu("显示", in: menu)
         add("今日", #selector(today), "1", to: view); add("本周", #selector(week), "2", to: view); add("待定", #selector(later), "3", to: view)
+        add("随时问", #selector(ask), "4", to: view)
         view.addItem(.separator()); add("命令与搜索…", #selector(commands), "k", to: view); add("搜索当前列表", #selector(search), "f", to: view)
         let help = submenu("帮助", in: menu); add("快捷键", #selector(shortcuts), "?", to: help)
         NSApp.mainMenu = menu
@@ -86,6 +90,8 @@ import Darwin
                 if event.keyCode == 36 || event.keyCode == 76 { NotificationCenter.default.post(name: .commandExecute, object: nil); return nil }
             }
             if self.window.attachedSheet != nil || self.store.sheet != nil { return event }
+            // Web content and login popups own their typing/navigation keys.
+            if event.window !== self.window || self.store.asking { return event }
             let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if modifiers == [.command, .option], let id = self.store.selected, event.keyCode == 126 || event.keyCode == 125 { self.store.shift(id, by: event.keyCode == 126 ? -1 : 1); return nil }
             if self.window.firstResponder is NSTextView { return event }
@@ -103,7 +109,7 @@ import Darwin
             return nil
         }
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "本地便签", .applicationVersion: "1.0", .credits: NSAttributedString(string: "今日 · 本周 · 待定\n基于极简工作台任务功能的独立 macOS 应用。")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "本地工作台", .applicationVersion: "1.0", .credits: NSAttributedString(string: "今日 · 本周 · 待定\n基于极简工作台任务功能的独立 macOS 应用。")]) }
     @objc func capture() { store.sheet = .capture }
     @objc func plan() { store.sheet = .plan }
     @objc func commands() { store.sheet = .commands }
@@ -112,6 +118,7 @@ import Darwin
     @objc func today() { store.switchTo(.today) }
     @objc func week() { store.switchTo(.week) }
     @objc func later() { store.switchTo(.later) }
+    @objc func ask() { store.showAsk() }
     @objc func undo() { store.undo() }
     @objc func importData() { store.importData() }
     @objc func exportData() { store.exportData() }
